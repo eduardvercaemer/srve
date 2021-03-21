@@ -1,4 +1,6 @@
 //! Create simple network wrappers for applications, via TCP sockets.
+extern crate bincode;
+extern crate serde;
 
 mod client;
 mod pk;

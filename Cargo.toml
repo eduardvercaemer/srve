@@ -12,7 +12,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = "*"
-serde_derive = "*"
-bincode = "*"
-text_io = "*"
+serde = "1.0.124"
+bincode = "1.3.2"
+
+[dev-dependencies]
+serde_derive = "1.0.124"
+text_io = "0.1.8"

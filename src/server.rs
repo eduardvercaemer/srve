@@ -1,15 +1,14 @@
-use std::net::{TcpListener, SocketAddr, TcpStream};
-use std::collections::LinkedList;
+use crate::pk;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::collections::LinkedList;
 use std::error::Error;
-
-use crate::pk;
 use std::marker::PhantomData;
+use std::net::{TcpListener, SocketAddr, TcpStream};
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::Receiver;
-use std::thread::spawn;
 use std::sync::mpsc;
+use std::thread;
 
 /// Represents our server.
 pub struct Server<S,M> {
@@ -54,7 +53,7 @@ where
         sock.set_nonblocking(false)?;
         let (tx, rx) = mpsc::channel::<ConnInbound>();
         // TODO: handle the child thread somewhere
-        spawn(move || loop {
+        thread::spawn(move || loop {
             // listen for possible new connections
             match sock.accept() {
                 Ok((stream, addr)) => { // new connection

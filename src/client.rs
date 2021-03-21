@@ -1,10 +1,10 @@
 use crate::pk;
-use std::net::TcpStream;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::fmt::Debug;
 use std::error::Error;
+use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::net::TcpStream;
 
 /// Represents a connection to a server.
 pub struct Client<M>

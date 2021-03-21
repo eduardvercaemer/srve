@@ -1,9 +1,9 @@
-use std::net::TcpStream;
 use bincode::{serialize, deserialize};
-use std::io::{Write, Read, ErrorKind};
-use std::error::Error;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::error::Error;
+use std::io::{Write, Read, ErrorKind};
+use std::net::TcpStream;
 
 /// Send a message via a tcp stream (blocking).
 pub fn send<M>(msg: M, stream: &mut TcpStream) -> Result<(), Box<dyn Error>>
