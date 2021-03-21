@@ -5,6 +5,16 @@ use std::error::Error;
 use std::io::{Write, Read, ErrorKind};
 use std::net::TcpStream;
 
+/// Possible results when attempting to receive a message.
+pub enum RecvResult<M> {
+    /// We succesfully got a message.
+    Some(M),
+    /// The stream is currently empty.
+    None,
+    /// The stream was closed.
+    Closed,
+}
+
 /// Send a message via a tcp stream (blocking).
 pub fn send<M>(msg: M, stream: &mut TcpStream) -> Result<(), Box<dyn Error>>
 where
@@ -46,7 +56,7 @@ where
 
 /// Return immediately if there are no incoming messages, otherwise will block until we can
 /// receive a complete message.
-pub fn try_recv<M>(stream: &mut TcpStream) -> Result<Option<M>, Box<dyn Error>>
+pub fn try_recv<M>(stream: &mut TcpStream) -> Result<RecvResult<M>, Box<dyn Error>>
 where
     M: DeserializeOwned
 {
@@ -58,13 +68,12 @@ where
     let mut buf = [0u8; 1];
     match stream.peek(&mut buf[..]) {
         Ok(size) => {
-            if size == 0 { // empty
-                return Ok(None);
+            if size == 0 { // stream was closed
+                return Ok(RecvResult::Closed);
             }
         }
-        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-            // empty
-            return Ok(None);
+        Err(ref e) if e.kind() == ErrorKind::WouldBlock => { // stream is empty
+            return Ok(RecvResult::None);
         }
         Err(e) => return Err(Box::new(e)),
     }
@@ -81,5 +90,5 @@ where
     let mut buf = Vec::new();
     buf.resize(len, 0u8);
     stream.read_exact(buf.as_mut_slice())?;
-    Ok(Some(deserialize(buf.as_slice())?))
+    Ok(RecvResult::Some(deserialize(buf.as_slice())?))
 }

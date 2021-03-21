@@ -1,25 +1,27 @@
 use crate::pk;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::collections::LinkedList;
+use std::collections::VecDeque;
 use std::error::Error;
 use std::marker::PhantomData;
-use std::net::{TcpListener, SocketAddr, TcpStream};
+use std::net::{TcpListener, SocketAddr, TcpStream, Shutdown};
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc;
 use std::thread;
+use crate::pk::RecvResult;
 
 /// Represents our server.
 pub struct Server<S,M> {
     /// Receive new connections from the slave thread.
     listener: Receiver<ConnInbound>,
     /// List of current connections.
-    conns: LinkedList<Conn<S,M>>,
+    conns: VecDeque<Conn<S,M>>,
 
     /* connection callbacks */
     cb_connection: Option<fn(&mut Conn<S,M>)>,
     cb_message: Option<fn (&mut Conn<S,M>, M)>,
+    cb_close: Option<fn (&mut Conn<S,M>)>,
 }
 
 /// Server side representation of a client connection.
@@ -68,12 +70,13 @@ where
         });
 
         // return the new server
-        let conns: LinkedList<Conn<S,M>> = LinkedList::new();
+        let conns: VecDeque<Conn<S,M>> = VecDeque::new();
         Ok(Self {
             listener: rx,
             conns,
             cb_connection: None,
             cb_message: None,
+            cb_close: None,
         })
     }
 
@@ -86,6 +89,12 @@ where
     /// Setup a calback for each received message.
     pub fn on_message(mut self, cb: fn (&mut Conn<S,M>, M)) -> Self {
         self.cb_message = Some(cb);
+        self
+    }
+
+    /// Setup a callback for closed connections.
+    pub fn on_close(mut self, cb: fn(&mut Conn<S,M>)) -> Self {
+        self.cb_close = Some(cb);
         self
     }
 
@@ -104,19 +113,33 @@ where
             }
 
             // handle current connections
-            for mut conn in self.conns.iter_mut() {
+            let mut closed = Vec::new();
+            for (i, mut conn) in self.conns.iter_mut().enumerate() {
                 // see if there are new packets
                 // TODO: handle closed connections somehow
                 match conn.try_receive() {
-                    Ok(Some(msg)) => {
+                    Ok(RecvResult::Some(msg)) => {
                         if let Some(cb) = self.cb_message {
                             cb(&mut conn, msg);
                         }
                     }
-                    Ok(None) => {}
+                    Ok(RecvResult::Closed) => {
+                        if let Err(e) = conn.stream.shutdown(Shutdown::Both) {
+                            eprintln!("err: {}", e);
+                        }
+                        if let Some(cb) = self.cb_close {
+                            cb(conn);
+                        }
+                        // TODO: is there a better way of removing closed connections ?
+                        closed.push(i);
+                    }
+                    Ok(RecvResult::None) => {}
                     // TODO: handle connection errors
                     Err(e) => panic!("err: {}", e),
                 }
+            }
+            for i in closed.into_iter() {
+                self.conns.remove(i);
             }
         }
     }
@@ -140,7 +163,7 @@ where
     }
 
     /// Attempt to receive and decode incoming packets in this connection.
-    fn try_receive(&mut self) -> Result<Option<M>, Box<dyn Error>> {
+    fn try_receive(&mut self) -> Result<RecvResult<M>, Box<dyn Error>> {
         pk::try_recv(&mut self.stream)
     }
 

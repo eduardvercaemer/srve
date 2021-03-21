@@ -38,5 +38,8 @@ fn main() {
                 }
             }
         })
+        .on_close(|conn| {
+            println!("!! CLOSED :: {}", conn.addr);
+        })
         .run();
 }
