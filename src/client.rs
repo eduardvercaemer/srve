@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use std::error::Error;
 use std::marker::PhantomData;
 
-/// Main structure used to communicate with a server.
+/// Represents a connection to a server.
 pub struct Client<M>
 {
     /// Type of the communication messages.

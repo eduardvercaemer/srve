@@ -11,7 +11,7 @@ use std::sync::mpsc::Receiver;
 use std::thread::spawn;
 use std::sync::mpsc;
 
-/// Main structure to build a server.
+/// Represents our server.
 pub struct Server<S,M> {
     /// Receive new connections from the slave thread.
     listener: Receiver<ConnInbound>,
