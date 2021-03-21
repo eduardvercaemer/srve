@@ -1,0 +1,18 @@
+[package]
+name = "srve"
+version = "0.1.0"
+authors = ["Eduard Vercaemer <vercaemereduard@gmail.com>"]
+license = "MIT"
+description = "Simple API for creating server client communication with TCP streams."
+repository = "https://github.com/eduardvercaemer/srve"
+readme = "README.md"
+keywords = ["network", "server", "tcp", "client"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "*"
+serde_derive = "*"
+bincode = "*"
+text_io = "*"
