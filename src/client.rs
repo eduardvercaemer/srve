@@ -4,7 +4,7 @@ use serde::de::DeserializeOwned;
 use std::error::Error;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::net::TcpStream;
+use std::net::{TcpStream, Shutdown};
 
 /// Represents a connection to a server.
 pub struct Client<M>
@@ -38,5 +38,11 @@ where
     pub fn recv(&mut self) -> Result<M, Box<dyn Error>> {
         let msg = pk::recv(&mut self.stream)?;
         Ok(msg)
+    }
+
+    /// Closes the connection to the server.
+    pub fn close(self) -> Result<(), Box<dyn Error>> {
+        self.stream.shutdown(Shutdown::Both)?;
+        Ok(())
     }
 }

@@ -1,10 +1,17 @@
 //! Simulate a broken client.
+#[macro_use]
+extern crate serde_derive;
 extern crate text_io;
+extern crate srve;
+
+mod shared;
 
 use std::net::{TcpStream, Shutdown};
 use std::io::{Write, Stdout, stdout};
 use std::error::Error;
 use text_io::read;
+use shared::Msg;
+use srve::Client;
 
 /// Stablish a connection and send an incomplete message.
 /// Closes the connection before sending the expected amount of bytes.
@@ -46,12 +53,21 @@ fn pk_bad() -> Result<(), Box<dyn Error>>{
     Ok(())
 }
 
+/// Stablish a connection, sends a good pk, but then closes before receiving the
+/// server response-
+fn pk_no_recv() -> Result<(), Box<dyn Error>>{
+    let mut c = Client::connect("127.0.0.1:6935")?;
+    c.send(Msg::Print)?;
+    c.close()?;
+    Ok(())
+}
 /// Allows the user to simulate multiple types of client errors.
 fn main() {
     println!(" ...::: COMMANDS :::... ");
     println!();
     println!("> bad");
     println!("> incomplete");
+    println!("> norecv");
     println!();
 
     loop {
@@ -65,6 +81,9 @@ fn main() {
             }
             "bad" => {
                 pk_bad().unwrap();
+            }
+            "norecv" => {
+                pk_no_recv().unwrap();
             }
             _ => {}
         }
