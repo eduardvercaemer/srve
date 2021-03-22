@@ -18,9 +18,11 @@ pub struct Server<S,M> {
     conns: Vec<Conn<S,M>>,
 
     /* connection callbacks */
-    cb_connection: Option<fn(&mut Conn<S,M>)>,
+    cb_closed: Option<fn (&mut Conn<S,M>)>,
+    cb_closed_unexpected: Option<fn (&mut Conn<S,M>)>,
+    cb_connection: Option<fn (&mut Conn<S,M>)>,
+    cb_error: Option<fn (&mut Conn<S,M>, Box<dyn Error>)>,
     cb_message: Option<fn (&mut Conn<S,M>, M)>,
-    cb_close: Option<fn (&mut Conn<S,M>)>,
 }
 
 /// Server side representation of a client connection.
@@ -32,7 +34,7 @@ pub struct Conn<S,M> {
     /// Connection state.
     state: Box<S>,
     /// Wether the connection has been set as should close.
-    close: bool,
+    should_close: bool,
 
     /// Address of client connection.
     pub addr: SocketAddr,
@@ -75,15 +77,36 @@ where
         Ok(Self {
             listener: rx,
             conns,
+            /* connection callbacks */
+            cb_closed: None,
+            cb_closed_unexpected: None,
             cb_connection: None,
+            cb_error: None,
             cb_message: None,
-            cb_close: None,
         })
+    }
+
+    /// Setup a callback for closed connections.
+    pub fn on_closed(mut self, cb: fn(&mut Conn<S,M>)) -> Self {
+        self.cb_closed = Some(cb);
+        self
+    }
+
+    /// Setup a callback for unexpectedly closed connections.
+    pub fn on_closed_unexpected(mut self, cb: fn(&mut Conn<S,M>)) -> Self {
+        self.cb_closed_unexpected = Some(cb);
+        self
     }
 
     /// Setup a callback for each new connection.
     pub fn on_connection(mut self, cb: fn (&mut Conn<S,M>)) -> Self {
         self.cb_connection = Some(cb);
+        self
+    }
+
+    /// Setup a callback for connection errors.
+    pub fn on_error(mut self, cb: fn(&mut Conn<S,M>, Box<dyn Error>)) -> Self {
+        self.cb_error = Some(cb);
         self
     }
 
@@ -93,18 +116,16 @@ where
         self
     }
 
-    /// Setup a callback for closed connections.
-    pub fn on_close(mut self, cb: fn(&mut Conn<S,M>)) -> Self {
-        self.cb_close = Some(cb);
-        self
-    }
-
     /// Run the server by using the given callback function on connections.
+    ///
+    /// At this moment, the server starts adding inbound connections and handling them,
+    /// by using the callbacks given during its creation.
     pub fn run(mut self) -> ! {
         /* this loop will run forever */
         loop {
             // check for new connections from slave thread
             // TODO: handle try_recv errors
+            /* we use connection callback here */
             while let Ok(inbound) = self.listener.try_recv() {
                 let mut conn = Conn::new(inbound);
                 info!("{} :: inbound", conn.addr);
@@ -121,38 +142,44 @@ where
                 match conn.try_receive() {
                     /* succesfully received a message */
                     Ok(RecvResult::Some(msg)) => {
-                        info!("{} :: recveived message", conn.addr);
+                        info!("{} :: message", conn.addr);
                         if let Some(cb) = self.cb_message {
                             cb(&mut conn, msg);
                         }
                     }
                     /* client closed connection */
                     Ok(RecvResult::Closed) => {
-                        info!("{} :: closed connection", conn.addr);
-                        if let Err(e) = conn.stream.shutdown(Shutdown::Both) {
-                            warn!("{} :: error closing stream: {}", conn.addr, e);
-                        }
-                        if let Some(cb) = self.cb_close {
+                        info!("{} :: closed", conn.addr);
+                        attempt_shutdown(&mut conn.stream);
+                        if let Some(cb) = self.cb_closed {
                             cb(conn);
                         }
-                        conn.close = true;
+                        conn.should_close = true;
                     }
                     /* client remains silent */
                     Ok(RecvResult::None) => {}
                     /* client closed unexpectedly, terminates connection */
                     Ok(RecvResult::ClosedWrongly) => {
                         warn!("{} :: closed unexepectedly", conn.addr);
-                        conn.close = true;
+                        attempt_shutdown(&mut conn.stream);
+                        if let Some(cb) = self.cb_closed_unexpected {
+                            cb(conn);
+                        }
+                        conn.should_close = true;
                     }
                     /* any other error, terminates connection as well */
                     Err(e) => {
-                        warn!("{} :: unexpected error: {}", conn.addr, e);
-                        conn.close = true;
+                        warn!("{} :: error: {}", conn.addr, e);
+                        attempt_shutdown(&mut conn.stream);
+                        if let Some(cb) = self.cb_error {
+                            cb(conn, e);
+                        }
+                        conn.should_close = true;
                     }
                 }
             }
             self.conns.retain(|conn| {
-                !conn.close
+                !conn.should_close
             });
         }
     }
@@ -172,7 +199,7 @@ where
             addr: inbound.addr,
             msg_type: PhantomData,
             state: Box::new(<S as Default>::default()),
-            close: false,
+            should_close: false,
         }
     }
 
@@ -183,7 +210,15 @@ where
 
     /// Send a message back.
     pub fn send(&mut self, msg: M) -> Result<(), Box<dyn Error>> {
-        pk::send(msg, &mut self.stream)
+        match pk::send(msg, &mut self.stream) {
+            /* we failed to send the message */
+            Err(e) => {
+                warn!("{} :: message send: {}", self.addr, e);
+                self.should_close = true;
+                Err(e)
+            }
+            Ok(_) => Ok(()),
+        }
     }
 }
 
@@ -198,5 +233,11 @@ impl<S,M> Deref for Conn<S,M> {
 impl<S,M> DerefMut for Conn<S,M> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut *self.state
+    }
+}
+
+fn attempt_shutdown(stream: &mut TcpStream) {
+    if let Err(e) = stream.shutdown(Shutdown::Both) {
+        warn!("failed to shutdown stream: {}", e);
     }
 }

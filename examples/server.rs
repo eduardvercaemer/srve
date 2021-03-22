@@ -17,30 +17,44 @@ fn main() {
     Server::<State,Msg>::bind(ADDR)
         .expect("Failed to bind server")
         // calback function for new connections
-        .on_connection(|conn| {})
+        .on_connection(|_conn| {})
         // callback function for new messages
         .on_message(|conn, msg| {
             match msg {
                 Msg::Add(x) => {
                     info!("{} :: add {}", conn.addr, x);
                     conn.value += x;
-                    conn.send(Msg::Ok).unwrap();
+                    conn.send(Msg::Ok).unwrap_or_else(|_| {
+                        warn!("send failed");
+                    });
                 },
                 Msg::Sub(x) => {
                     info!("{} :: sub {}", conn.addr, x);
                     conn.value -= x;
-                    conn.send(Msg::Ok).unwrap();
+                    conn.send(Msg::Ok).unwrap_or_else(|_| {
+                        warn!("send failed");
+                    });
                 }
                 Msg::Print => {
                     info!("{} :: value = {}", conn.addr, conn.value);
-                    conn.send(Msg::Value(conn.value)).unwrap();
+                    conn.send(Msg::Value(conn.value)).unwrap_or_else(|_| {
+                        warn!("send failed");
+                    });
                 }
                 _ => {
                     warn!("{} :: unexpected message", conn.addr);
-                    conn.send(Msg::Err).unwrap();
+                    conn.send(Msg::Err).unwrap_or_else(|_| {
+                        warn!("send failed");
+                    });
                 }
             }
         })
-        .on_close(|conn| {})
+        // callback function for connection closing
+        .on_closed(|_conn| {})
+        // callback function for unexpected connection closing
+        .on_closed_unexpected(|_conn| {})
+        // callback function for unexpected connection errors (e.g. bad msg)
+        .on_error(|_conn, _e| {})
+        // start the server
         .run();
 }
