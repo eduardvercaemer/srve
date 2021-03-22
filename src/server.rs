@@ -1,7 +1,7 @@
-use crate::pk;
+use crate::pk::{self, RecvResult};
+use log::{info, warn};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::collections::VecDeque;
 use std::error::Error;
 use std::marker::PhantomData;
 use std::net::{TcpListener, SocketAddr, TcpStream, Shutdown};
@@ -9,14 +9,13 @@ use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc;
 use std::thread;
-use crate::pk::RecvResult;
 
 /// Represents our server.
 pub struct Server<S,M> {
     /// Receive new connections from the slave thread.
     listener: Receiver<ConnInbound>,
     /// List of current connections.
-    conns: VecDeque<Conn<S,M>>,
+    conns: Vec<Conn<S,M>>,
 
     /* connection callbacks */
     cb_connection: Option<fn(&mut Conn<S,M>)>,
@@ -32,6 +31,8 @@ pub struct Conn<S,M> {
     msg_type: PhantomData<M>,
     /// Connection state.
     state: Box<S>,
+    /// Wether the connection has been set as should close.
+    close: bool,
 
     /// Address of client connection.
     pub addr: SocketAddr,
@@ -70,7 +71,7 @@ where
         });
 
         // return the new server
-        let conns: VecDeque<Conn<S,M>> = VecDeque::new();
+        let conns: Vec<Conn<S,M>> = Vec::new();
         Ok(Self {
             listener: rx,
             conns,
@@ -106,41 +107,53 @@ where
             // TODO: handle try_recv errors
             while let Ok(inbound) = self.listener.try_recv() {
                 let mut conn = Conn::new(inbound);
+                info!("{} :: inbound", conn.addr);
                 if let Some(cb) = self.cb_connection {
                     cb(&mut conn);
                 }
-                self.conns.push_back(conn);
+                self.conns.push(conn);
             }
 
-            // handle current connections
-            let mut closed = Vec::new();
-            for (i, mut conn) in self.conns.iter_mut().enumerate() {
-                // see if there are new packets
-                // TODO: handle closed connections somehow
+            /* handle current list of connections
+             * TODO: use thread pool for better performance ?
+             */
+            for mut conn in self.conns.iter_mut() {
                 match conn.try_receive() {
+                    /* succesfully received a message */
                     Ok(RecvResult::Some(msg)) => {
+                        info!("{} :: recveived message", conn.addr);
                         if let Some(cb) = self.cb_message {
                             cb(&mut conn, msg);
                         }
                     }
+                    /* client closed connection */
                     Ok(RecvResult::Closed) => {
+                        info!("{} :: closed connection", conn.addr);
                         if let Err(e) = conn.stream.shutdown(Shutdown::Both) {
-                            eprintln!("err: {}", e);
+                            warn!("{} :: error closing stream: {}", conn.addr, e);
                         }
                         if let Some(cb) = self.cb_close {
                             cb(conn);
                         }
-                        // TODO: is there a better way of removing closed connections ?
-                        closed.push(i);
+                        conn.close = true;
                     }
+                    /* client remains silent */
                     Ok(RecvResult::None) => {}
-                    // TODO: handle connection errors
-                    Err(e) => panic!("err: {}", e),
+                    /* client closed unexpectedly, terminates connection */
+                    Ok(RecvResult::ClosedWrongly) => {
+                        warn!("{} :: closed unexepectedly", conn.addr);
+                        conn.close = true;
+                    }
+                    /* any other error, terminates connection as well */
+                    Err(e) => {
+                        warn!("{} :: unexpected error: {}", conn.addr, e);
+                        conn.close = true;
+                    }
                 }
             }
-            for i in closed.into_iter() {
-                self.conns.remove(i);
-            }
+            self.conns.retain(|conn| {
+                !conn.close
+            });
         }
     }
 }
@@ -159,6 +172,7 @@ where
             addr: inbound.addr,
             msg_type: PhantomData,
             state: Box::new(<S as Default>::default()),
+            close: false,
         }
     }
 
@@ -169,8 +183,7 @@ where
 
     /// Send a message back.
     pub fn send(&mut self, msg: M) -> Result<(), Box<dyn Error>> {
-        pk::send(msg, &mut self.stream)?;
-        Ok(())
+        pk::send(msg, &mut self.stream)
     }
 }
 

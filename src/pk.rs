@@ -11,8 +11,10 @@ pub enum RecvResult<M> {
     Some(M),
     /// The stream is currently empty.
     None,
-    /// The stream was closed.
+    /// The stream was closed correctly.
     Closed,
+    /// The stream was closed unexpectedly.
+    ClosedWrongly,
 }
 
 /// Send a message via a tcp stream (blocking).
@@ -68,7 +70,7 @@ where
     let mut buf = [0u8; 1];
     match stream.peek(&mut buf[..]) {
         Ok(size) => {
-            if size == 0 { // stream was closed
+            if size == 0 { // stream was closed correctly
                 return Ok(RecvResult::Closed);
             }
         }
@@ -83,12 +85,28 @@ where
 
     // get length first
     let mut buf = [0u8; 8];
-    stream.read_exact(&mut buf[..])?;
+    match stream.read_exact(&mut buf[..]) {
+        Err(ref e) if e.kind() == ErrorKind::UnexpectedEof => { /* closed wrongly */
+            return Ok(RecvResult::ClosedWrongly);
+        }
+        Err(e) => { /* another error */
+            return Err(Box::new(e));
+        }
+        Ok(()) => { /* success */ }
+    };
     let len = deserialize::<u64>(&buf[..])? as usize;
 
     // then get the message
     let mut buf = Vec::new();
     buf.resize(len, 0u8);
-    stream.read_exact(buf.as_mut_slice())?;
+    match stream.read_exact(buf.as_mut_slice()) {
+        Err(ref e) if e.kind() == ErrorKind::UnexpectedEof => { /* closed wrongly */
+            return Ok(RecvResult::ClosedWrongly);
+        }
+        Err(e) => { /* another error */
+            return Err(Box::new(e));
+        }
+        Ok(()) => { /* success */ }
+    }
     Ok(RecvResult::Some(deserialize(buf.as_slice())?))
 }
