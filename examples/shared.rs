@@ -24,3 +24,5 @@ impl Default for State {
         }
     }
 }
+
+pub const ADDR: &'static str = "127.0.0.1:6935";

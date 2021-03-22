@@ -6,17 +6,22 @@ extern crate srve;
 mod shared;
 use text_io::read;
 use srve::Client;
-use shared::Msg;
+use shared::{Msg, ADDR};
 
 fn main() {
-    const ADDR: &'static str = "127.0.0.1:6935";
-
-    println!("attempting connection to {}", ADDR);
+    println!("connecting to {}", ADDR);
     let mut client: Client<Msg> = Client::connect(ADDR)
         .expect("Failed to connect");
 
+    println!(" ...::: COMMANDS :::... ");
+    println!();
+    println!("> add x");
+    println!("> sub x");
+    println!("> print");
+    println!("> bye");
+    println!();
+
     loop {
-        // send something based on input
         let s: String = read!();
         match s.as_str() {
             "add" => {
@@ -57,12 +62,11 @@ fn main() {
                     }
                 }
             }
-            _ => {
-                println!("valid commands:");
-                println!("> add x");
-                println!("> sub x");
-                println!("> print");
+            "bye" => {
+                client.close().unwrap();
+                break;
             }
+            _ => {}
         }
     }
 }

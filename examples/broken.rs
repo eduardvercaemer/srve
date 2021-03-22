@@ -7,16 +7,16 @@ extern crate srve;
 mod shared;
 
 use std::net::{TcpStream, Shutdown};
-use std::io::{Write, Stdout, stdout};
+use std::io::Write;
 use std::error::Error;
 use text_io::read;
-use shared::Msg;
+use shared::{Msg, ADDR};
 use srve::Client;
 
 /// Stablish a connection and send an incomplete message.
 /// Closes the connection before sending the expected amount of bytes.
 fn pk_incomplete() -> Result<(), Box<dyn Error>>{
-    let mut s = TcpStream::connect("127.0.0.1:6935")?;
+    let mut s = TcpStream::connect(ADDR)?;
 
     // server expects 8 bytes for 'len' attribute
     let mut buf0 = Vec::new();
@@ -36,7 +36,7 @@ fn pk_incomplete() -> Result<(), Box<dyn Error>>{
 /// Stablish a connection and send a bad message.
 /// Sends a message that will trigger a deserialization error on the server.
 fn pk_bad() -> Result<(), Box<dyn Error>>{
-    let mut s = TcpStream::connect("127.0.0.1:6935")?;
+    let mut s = TcpStream::connect(ADDR)?;
 
     // server expects 8 bytes for 'len' attribute
     let mut buf0 = Vec::new();
@@ -56,7 +56,7 @@ fn pk_bad() -> Result<(), Box<dyn Error>>{
 /// Stablish a connection, sends a good pk, but then closes before receiving the
 /// server response-
 fn pk_no_recv() -> Result<(), Box<dyn Error>>{
-    let mut c = Client::connect("127.0.0.1:6935")?;
+    let mut c = Client::connect(ADDR)?;
     c.send(Msg::Print)?;
     c.close()?;
     Ok(())
@@ -65,14 +65,12 @@ fn pk_no_recv() -> Result<(), Box<dyn Error>>{
 fn main() {
     println!(" ...::: COMMANDS :::... ");
     println!();
-    println!("> bad");
-    println!("> incomplete");
-    println!("> norecv");
+    println!("> bad /* simulates a bad message */");
+    println!("> incomplete /* simulates an incomplete message */");
+    println!("> norecv /* simulates a client that closes to fast */");
     println!();
 
     loop {
-        write!(stdout().lock(), "> ");
-
         let s: String = read!();
 
         match s.as_str() {

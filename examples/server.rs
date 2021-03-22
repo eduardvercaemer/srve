@@ -6,20 +6,26 @@ extern crate log;
 
 mod shared;
 use srve::Server;
-use shared::{State, Msg};
-use log::{info, warn};
+use shared::{State, Msg, ADDR};
+use log::{info, trace, warn, LevelFilter};
 
 fn main() {
-    const ADDR: &'static str = "127.0.0.1:6935";
-
-    simple_logger::SimpleLogger::new().init().unwrap();
+    /* select log level for crate */
+    simple_logger::SimpleLogger::new()
+        .with_module_level("srve", LevelFilter::Off)
+        .init()
+        .unwrap();
 
     Server::<State,Msg>::bind(ADDR)
         .expect("Failed to bind server")
         // calback function for new connections
-        .on_connection(|_conn| {})
+        .on_connection(|_conn| {
+            trace!("connection cb");
+        })
         // callback function for new messages
         .on_message(|conn, msg| {
+            trace!("message cb");
+
             match msg {
                 Msg::Add(x) => {
                     info!("{} :: add {}", conn.addr, x);
@@ -50,11 +56,17 @@ fn main() {
             }
         })
         // callback function for connection closing
-        .on_closed(|_conn| {})
+        .on_closed(|_conn| {
+            info!("closed cb");
+        })
         // callback function for unexpected connection closing
-        .on_closed_unexpected(|_conn| {})
+        .on_closed_unexpected(|_conn| {
+            info!("closed unexpected cb");
+        })
         // callback function for unexpected connection errors (e.g. bad msg)
-        .on_error(|_conn, _e| {})
+        .on_error(|_conn, _e| {
+            info!("error cb");
+        })
         // start the server
         .run();
 }

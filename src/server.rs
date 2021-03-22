@@ -87,30 +87,44 @@ where
     }
 
     /// Setup a callback for closed connections.
+    ///
+    /// This callback will only _ever_ be run, when the client terminates the connection
+    /// to the server.
     pub fn on_closed(mut self, cb: fn(&mut Conn<S,M>)) -> Self {
         self.cb_closed = Some(cb);
         self
     }
 
     /// Setup a callback for unexpectedly closed connections.
+    ///
+    /// This callback will be run when the connection is closed by the client when the
+    /// server is receiving a message.
     pub fn on_closed_unexpected(mut self, cb: fn(&mut Conn<S,M>)) -> Self {
         self.cb_closed_unexpected = Some(cb);
         self
     }
 
     /// Setup a callback for each new connection.
+    ///
+    /// This callback will be run when the server stablishes a new connection with a client,
+    /// _before_ any messages are recevied.
     pub fn on_connection(mut self, cb: fn (&mut Conn<S,M>)) -> Self {
         self.cb_connection = Some(cb);
         self
     }
 
     /// Setup a callback for connection errors.
+    ///
+    /// This callback will be run whenever there is an error attempting to get the next
+    /// message from a connection, e.g. a bad message that fails to be deserialized.
     pub fn on_error(mut self, cb: fn(&mut Conn<S,M>, Box<dyn Error>)) -> Self {
         self.cb_error = Some(cb);
         self
     }
 
     /// Setup a calback for each received message.
+    ///
+    /// This is the main callbcak, which is run every time a connection sends a new message.
     pub fn on_message(mut self, cb: fn (&mut Conn<S,M>, M)) -> Self {
         self.cb_message = Some(cb);
         self
@@ -139,6 +153,9 @@ where
              * TODO: use thread pool for better performance ?
              */
             for mut conn in self.conns.iter_mut() {
+                /* skip closed connections */
+                if conn.should_close {  continue; }
+
                 match conn.try_receive() {
                     /* succesfully received a message */
                     Ok(RecvResult::Some(msg)) => {
@@ -157,6 +174,9 @@ where
                         conn.should_close = true;
                     }
                     /* client remains silent */
+                    /*
+                     * TODO: implement some sort of timeout system
+                     */
                     Ok(RecvResult::None) => {}
                     /* client closed unexpectedly, terminates connection */
                     Ok(RecvResult::ClosedWrongly) => {
@@ -213,12 +233,18 @@ where
         match pk::send(msg, &mut self.stream) {
             /* we failed to send the message */
             Err(e) => {
-                warn!("{} :: message send: {}", self.addr, e);
-                self.should_close = true;
+                warn!("{} :: err send: {}", self.addr, e);
                 Err(e)
             }
             Ok(_) => Ok(()),
         }
+    }
+
+    /// Close the connection with the client.
+    pub fn close(&mut self) -> Result<(), Box<dyn Error>> {
+        attempt_shutdown(&mut self.stream);
+        self.should_close = true;
+        Ok(())
     }
 }
 

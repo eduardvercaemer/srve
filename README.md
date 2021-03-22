@@ -31,6 +31,12 @@ match c.recv()? {
 }
 ```
 
+we finish by closing the client
+
+```rust
+c.close()?;
+```
+
 ### Server
 
 To create a server, we simply specify which messages we want to use, and which
@@ -57,6 +63,7 @@ s
         // and also use connection methods
         conn.send(Msg::Goodbye).unwrap();
     })
+    ( /* other callbacks, more in the docs */ )
     .run();
 ```
 
@@ -65,3 +72,7 @@ s
 You can try the example code by running `cargo run --example server` and then 
 `cargo run --example client` in a different (or multiple) terminal(s), then
 write commands to interact with the server.
+
+There is also the `broken.rs` example, which I use to test how the server
+interacts with 'broken' clients, such as closing unexpectedly, or sending bad
+messages, etc.
